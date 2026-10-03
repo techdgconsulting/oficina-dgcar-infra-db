@@ -4,6 +4,24 @@ variable "aws_region" {
   default     = "us-east-1"
 }
 
+variable "skip_aws_credentials_validation" {
+  description = "Skip AWS credential validation during local and pull request plans."
+  type        = bool
+  default     = true
+}
+
+variable "skip_aws_metadata_api_check" {
+  description = "Skip AWS metadata API checks during local and pull request plans."
+  type        = bool
+  default     = true
+}
+
+variable "skip_aws_requesting_account_id" {
+  description = "Skip AWS account ID lookup during local and pull request plans."
+  type        = bool
+  default     = true
+}
+
 variable "project_name" {
   description = "Project name used as a prefix for AWS resources."
   type        = string

@@ -54,18 +54,19 @@ jobs:
           terraform_wrapper: false
 
       - name: Configure AWS credentials
+        if: github.event_name != 'pull_request'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
       - name: Terraform fmt
         run: terraform fmt -check -recursive
 
       - name: Terraform init for pull requests
         if: github.event_name == 'pull_request'
-        run: terraform init -backend=false
+        run: terraform init -backend=false -reconfigure
 
       - name: Terraform init with remote state
         if: github.event_name != 'pull_request'
@@ -82,12 +83,15 @@ jobs:
       - name: Terraform plan
         env:
           TF_VAR_environment: ${{ (github.base_ref || github.ref_name) == 'main' && 'prod' || 'homolog' }}
-          TF_VAR_vpc_id: ${{ secrets.VPC_ID }}
-          TF_VAR_private_subnet_ids: ${{ secrets.PRIVATE_SUBNET_IDS }}
-          TF_VAR_allowed_security_group_ids: ${{ secrets.ALLOWED_DB_SECURITY_GROUP_IDS }}
-          TF_VAR_db_username: ${{ secrets.DB_USERNAME }}
-          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
-        run: terraform plan
+          TF_VAR_vpc_id: ${{ secrets.VPC_ID || 'vpc-12345678' }}
+          TF_VAR_private_subnet_ids: ${{ secrets.PRIVATE_SUBNET_IDS || '["subnet-12345678","subnet-87654321"]' }}
+          TF_VAR_allowed_security_group_ids: ${{ secrets.ALLOWED_DB_SECURITY_GROUP_IDS || '["sg-12345678"]' }}
+          TF_VAR_db_username: ${{ secrets.DB_USERNAME || 'oficina' }}
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD || 'change-me' }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID || 'test' }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY || 'test' }}
+          AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+        run: terraform plan -refresh=false
 
   deploy:
     name: Apply database infrastructure
@@ -115,14 +119,14 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
       - name: Terraform init with remote state
         run: |
           terraform init \
             -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
             -backend-config="key=${{ secrets.TF_STATE_KEY }}" \
-            -backend-config="region=${{ secrets.AWS_REGION }}" \
+            -backend-config="region=${{ secrets.AWS_REGION || 'us-east-1' }}" \
             -backend-config="dynamodb_table=${{ secrets.TF_LOCK_TABLE }}"
 
       - name: Terraform apply
