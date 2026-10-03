@@ -64,9 +64,13 @@ jobs:
       - name: Terraform fmt
         run: terraform fmt -check -recursive
 
+      - name: Disable remote backend for pull requests
+        if: github.event_name == 'pull_request'
+        run: mv backend.tf backend.tf.disabled
+
       - name: Terraform init for pull requests
         if: github.event_name == 'pull_request'
-        run: terraform init -backend=false -reconfigure
+        run: terraform init
 
       - name: Terraform init with remote state
         if: github.event_name != 'pull_request'
