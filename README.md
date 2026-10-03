@@ -42,4 +42,21 @@ Repositório da infraestrutura de banco de dados gerenciado da Oficina Mecânica
 
 ## Status
 
-Estrutura inicial criada. Terraform de RDS e pipeline de infraestrutura serão extraídos nas próximas etapas.
+Extração inicial realizada a partir do repositório histórico.
+
+Artefatos extraídos:
+
+- Terraform inicial de RDS PostgreSQL em `terraform/**`
+- Workflow Terraform em `.github/workflows/terraform.yml`
+
+O commit de origem está registrado em [`ORIGEM_HISTORICA.md`](./ORIGEM_HISTORICA.md).
+
+## Dependências De Entrada
+
+Este repositório depende dos seguintes valores produzidos por `oficina-dgcar-infra-k8s`:
+
+- `vpc_id`
+- `private_subnet_ids`
+- `eks_cluster_security_group_id`
+
+Esses valores devem ser informados por `terraform.tfvars`, pipeline ou mecanismo de remote state definido na etapa de infraestrutura.
