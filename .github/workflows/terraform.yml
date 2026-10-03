@@ -1,4 +1,4 @@
-name: Infra DB CI/CD - Terraform
+name: Managed Database Terraform
 
 on:
   pull_request:
@@ -22,13 +22,21 @@ on:
         options:
           - plan
           - apply
+      environment:
+        description: "Target environment"
+        required: true
+        default: "homolog"
+        type: choice
+        options:
+          - homolog
+          - prod
 
 permissions:
   contents: read
 
 jobs:
-  terraform:
-    name: Terraform DB
+  validate:
+    name: Validate database infrastructure
     runs-on: ubuntu-latest
 
     defaults:
@@ -45,32 +53,84 @@ jobs:
           terraform_version: 1.15.8
           terraform_wrapper: false
 
-      - name: Terraform fmt
-        run: terraform fmt -check -recursive
-
       - name: Configure AWS credentials
-        if: github.event_name != 'pull_request'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Terraform init without backend for pull requests
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init for pull requests
         if: github.event_name == 'pull_request'
         run: terraform init -backend=false
 
-      - name: Terraform init
+      - name: Terraform init with remote state
         if: github.event_name != 'pull_request'
-        run: terraform init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ secrets.TF_STATE_KEY }}" \
+            -backend-config="region=${{ secrets.AWS_REGION }}" \
+            -backend-config="dynamodb_table=${{ secrets.TF_LOCK_TABLE }}"
 
       - name: Terraform validate
         run: terraform validate
 
       - name: Terraform plan
-        if: github.event_name != 'pull_request'
+        env:
+          TF_VAR_environment: ${{ (github.base_ref || github.ref_name) == 'main' && 'prod' || 'homolog' }}
+          TF_VAR_vpc_id: ${{ secrets.VPC_ID }}
+          TF_VAR_private_subnet_ids: ${{ secrets.PRIVATE_SUBNET_IDS }}
+          TF_VAR_allowed_security_group_ids: ${{ secrets.ALLOWED_DB_SECURITY_GROUP_IDS }}
+          TF_VAR_db_username: ${{ secrets.DB_USERNAME }}
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
         run: terraform plan
 
+  deploy:
+    name: Apply database infrastructure
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'apply')
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog') }}
+
+    defaults:
+      run:
+        working-directory: terraform
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Terraform init with remote state
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ secrets.TF_STATE_KEY }}" \
+            -backend-config="region=${{ secrets.AWS_REGION }}" \
+            -backend-config="dynamodb_table=${{ secrets.TF_LOCK_TABLE }}"
+
       - name: Terraform apply
-        if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
+        env:
+          TF_VAR_environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog') }}
+          TF_VAR_vpc_id: ${{ secrets.VPC_ID }}
+          TF_VAR_private_subnet_ids: ${{ secrets.PRIVATE_SUBNET_IDS }}
+          TF_VAR_allowed_security_group_ids: ${{ secrets.ALLOWED_DB_SECURITY_GROUP_IDS }}
+          TF_VAR_db_username: ${{ secrets.DB_USERNAME }}
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
         run: terraform apply -auto-approve
