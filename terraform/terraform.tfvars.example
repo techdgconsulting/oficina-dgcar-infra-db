@@ -10,5 +10,13 @@ db_name                  = "oficina"
 db_username              = "oficina"
 db_password              = "change-me"
 db_instance_class        = "db.t4g.micro"
+db_engine_version        = "16"
 db_allocated_storage     = 20
 db_max_allocated_storage = 30
+db_multi_az              = false
+
+backup_retention_period = 7
+backup_window           = "03:00-04:00"
+maintenance_window      = "sun:04:00-sun:05:00"
+deletion_protection     = true
+skip_final_snapshot     = false

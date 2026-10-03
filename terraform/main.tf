@@ -2,6 +2,21 @@ locals {
   name = "${var.project_name}-${var.environment}"
 }
 
+resource "aws_db_parameter_group" "postgres" {
+  name        = "${local.name}-postgres-params"
+  family      = var.db_parameter_group_family
+  description = "Managed PostgreSQL parameters for DGCar ${var.environment}"
+
+  parameter {
+    name  = "log_min_duration_statement"
+    value = var.log_min_duration_statement_ms
+  }
+
+  tags = {
+    Name = "${local.name}-postgres-params"
+  }
+}
+
 resource "aws_security_group" "rds" {
   name        = "${local.name}-rds-sg"
   description = "Allow PostgreSQL access only from authorized workloads"
@@ -41,7 +56,7 @@ resource "aws_db_instance" "postgres" {
   identifier = "${local.name}-postgres"
 
   engine                     = "postgres"
-  engine_version             = "16"
+  engine_version             = var.db_engine_version
   instance_class             = var.db_instance_class
   allocated_storage          = var.db_allocated_storage
   max_allocated_storage      = var.db_max_allocated_storage
@@ -52,12 +67,16 @@ resource "aws_db_instance" "postgres" {
   password                   = var.db_password
   port                       = 5432
   publicly_accessible        = false
-  multi_az                   = false
-  backup_retention_period    = 1
-  deletion_protection        = false
-  skip_final_snapshot        = true
+  multi_az                   = var.db_multi_az
+  backup_retention_period    = var.backup_retention_period
+  backup_window              = var.backup_window
+  maintenance_window         = var.maintenance_window
+  deletion_protection        = var.deletion_protection
+  skip_final_snapshot        = var.skip_final_snapshot
+  final_snapshot_identifier  = var.skip_final_snapshot ? null : "${local.name}-postgres-final"
   db_subnet_group_name       = aws_db_subnet_group.main.name
   vpc_security_group_ids     = [aws_security_group.rds.id]
+  parameter_group_name       = aws_db_parameter_group.postgres.name
   apply_immediately          = true
   auto_minor_version_upgrade = true
 
