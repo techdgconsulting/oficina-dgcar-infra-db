@@ -43,7 +43,11 @@ Outputs publicados:
 
 ## State Terraform
 
-O backend remoto usa S3 com lock em DynamoDB.
+O backend remoto usa S3 com lockfile nativo:
+
+```text
+use_lockfile=true
+```
 
 Secrets esperados:
 
@@ -52,17 +56,17 @@ Secrets esperados:
 - `AWS_REGION`;
 - `TF_STATE_BUCKET`;
 - `TF_STATE_KEY`;
-- `TF_LOCK_TABLE`;
+- `GH_AUTOMATION_TOKEN`;
 - `VPC_ID`;
 - `PRIVATE_SUBNET_IDS`;
 - `ALLOWED_DB_SECURITY_GROUP_IDS`;
 - `DB_USERNAME`;
 - `DB_PASSWORD`.
 
-Recomendacao de chaves de state:
+Chaves de state definidas:
 
-- homologacao: `oficina-dgcar/infra-db/homolog/terraform.tfstate`;
-- producao: `oficina-dgcar/infra-db/prod/terraform.tfstate`.
+- homologacao: `homolog/infra-db/terraform.tfstate`;
+- producao: `prod/infra-db/terraform.tfstate`.
 
 ## Pipeline
 
@@ -75,7 +79,29 @@ Pull Requests executam:
 
 Push em `homolog` ou `main` executa validacao e plan offline.
 
-Apply real deve ser disparado manualmente por `workflow_dispatch`, usando `action=apply` e o environment desejado. O environment `prod` continua sujeito a aprovacao no GitHub.
+Apply real e disparado manualmente por `workflow_dispatch`, usando `action=apply` e o environment desejado. O environment `prod` esta sujeito a aprovacao no GitHub.
+
+Depois do `terraform apply`, o workflow publica automaticamente os outputs do RDS no repo `oficina-dgcar-auth-lambda`.
+
+Secrets gravados em `oficina-dgcar-auth-lambda`:
+
+- `DB_HOST`;
+- `DB_PORT`;
+- `DB_NAME`;
+- `DB_USERNAME`;
+- `DB_PASSWORD`;
+- `DB_SSL`.
+
+## Automacao Entre Repositorios
+
+O workflow usa `GH_AUTOMATION_TOKEN` para gravar secrets no repo da Lambda via GitHub CLI. Esse token fica configurado nos environments `homolog` e `prod`.
+
+Fluxo automatizado:
+
+1. `oficina-dgcar-infra-db` executa `apply`.
+2. Terraform publica `rds_endpoint`, `rds_port` e `db_name`.
+3. O workflow grava os dados de conexao do banco no repo `oficina-dgcar-auth-lambda`.
+4. A Lambda passa a ter os secrets necessarios para o `apply-infra`.
 
 ## Execucao Local
 
