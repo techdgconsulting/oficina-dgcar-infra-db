@@ -83,6 +83,11 @@ Apply real e disparado manualmente por `workflow_dispatch`, usando `action=apply
 
 Depois do `terraform apply`, o workflow publica automaticamente os outputs do RDS no repo `oficina-dgcar-auth-lambda`.
 
+Politica de backup aplicada por ambiente:
+
+- `homolog`: `backup_retention_period=0`, compatibilizado com restricoes de contas AWS Free Tier usadas no laboratorio;
+- `prod`: `backup_retention_period=7`, preservando retencao automatica para ambiente produtivo.
+
 Secrets gravados em `oficina-dgcar-auth-lambda`:
 
 - `DB_HOST`;
@@ -121,7 +126,7 @@ Para executar `terraform plan` sem acesso ao backend remoto, renomeie temporaria
 - Storage criptografado com `storage_encrypted = true`.
 - Banco sem acesso publico.
 - Acesso PostgreSQL restrito aos security groups autorizados.
-- Backup automatico configurado por `backup_retention_period`.
+- Backup automatico configurado por `backup_retention_period`, com valor por ambiente definido no workflow.
 - Janela de backup e manutencao configuraveis.
 - Protecao contra exclusao habilitada por padrao.
 - Snapshot final habilitado por padrao para remocoes controladas.
