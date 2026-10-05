@@ -45,8 +45,9 @@ variable "private_subnet_ids" {
 }
 
 variable "allowed_security_group_ids" {
-  description = "Security group IDs allowed to connect to PostgreSQL."
-  type        = list(string)
+  description = "Comma-separated security group IDs allowed to connect to PostgreSQL."
+  type        = string
+  default     = ""
 }
 
 variable "auth_lambda_security_group_id" {

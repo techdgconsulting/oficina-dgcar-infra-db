@@ -28,7 +28,7 @@ Entradas esperadas de `oficina-dgcar-infra-k8s`:
 
 - `vpc_id`;
 - `private_subnet_ids`;
-- `eks_cluster_security_group_id`, informado em `allowed_security_group_ids`.
+- `eks_cluster_security_group_id`, informado em `allowed_security_group_ids` como texto separado por virgula.
 
 Entrada esperada de `oficina-dgcar-auth-lambda`:
 
@@ -63,7 +63,7 @@ Secrets esperados:
 - `GH_AUTOMATION_TOKEN`;
 - `VPC_ID`;
 - `PRIVATE_SUBNET_IDS`;
-- `ALLOWED_DB_SECURITY_GROUP_IDS`;
+- `ALLOWED_DB_SECURITY_GROUP_IDS`, em formato texto simples, exemplo `sg-xxxx` ou `sg-xxxx,sg-yyyy`;
 - `AUTH_LAMBDA_SECURITY_GROUP_ID`;
 - `DB_USERNAME`;
 - `DB_PASSWORD`.
@@ -109,7 +109,7 @@ As configuracoes acima sao aplicadas pelo workflow via variaveis `TF_VAR_*`, man
 
 Conectividade Lambda -> RDS:
 
-- `ALLOWED_DB_SECURITY_GROUP_IDS` mantem os security groups autorizados para workloads do Kubernetes;
+- `ALLOWED_DB_SECURITY_GROUP_IDS` mantem os security groups autorizados para workloads do Kubernetes em texto separado por virgula;
 - `AUTH_LAMBDA_SECURITY_GROUP_ID` adiciona o security group da Lambda Auth CPF a regra de entrada PostgreSQL;
 - Terraform consolida os valores em uma lista unica com remocao de duplicados;
 - essa configuracao corrige o timeout da Lambda ao consultar o PostgreSQL privado em homologacao.
