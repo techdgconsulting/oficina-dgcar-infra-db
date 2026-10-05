@@ -93,6 +93,15 @@ Sizing aplicado por ambiente:
 - `homolog`: `db_instance_class=db.t3.micro` e `db_storage_type=gp2`, combinacao adotada para reduzir falhas de capacidade em contas Free Tier;
 - `prod`: `db_instance_class=db.t4g.micro` e `db_storage_type=gp3`, preservando o padrao definido para ambiente produtivo.
 
+Configuracao efetiva por ambiente:
+
+| Ambiente | Classe RDS | Storage | Retencao de backup | Finalidade |
+|---|---|---|---|---|
+| `homolog` | `db.t3.micro` | `gp2` | `0` dias | Compatibilidade com restricoes de laboratorio, Free Tier e disponibilidade regional. |
+| `prod` | `db.t4g.micro` | `gp3` | `7` dias | Configuracao produtiva com retencao automatica de backup. |
+
+As configuracoes acima sao aplicadas pelo workflow via variaveis `TF_VAR_*`, mantendo o Terraform parametrizado e evitando arquivos `.tfvars` com valores reais versionados.
+
 Secrets gravados em `oficina-dgcar-auth-lambda`:
 
 - `DB_HOST`;
@@ -113,6 +122,25 @@ Fluxo automatizado:
 3. O workflow grava os dados de conexao do banco no repo `oficina-dgcar-auth-lambda`.
 4. A Lambda passa a ter os secrets necessarios para o `apply-infra`.
 
+## Ajustes Operacionais Registrados
+
+Durante o provisionamento de homologacao, a conta AWS retornou duas restricoes operacionais:
+
+- `FreeTierRestrictionError`: a retencao de backup configurada inicialmente excedia o limite disponivel para a conta Free Tier;
+- `InsufficientDBInstanceCapacity`: a combinacao `db.t4g.micro` com `gp3` nao possuia capacidade disponivel nas Availability Zones da VPC no momento do apply.
+
+As correcoes implementadas foram:
+
+- `backup_retention_period=0` para `homolog`;
+- `backup_retention_period=7` para `prod`;
+- `db_instance_class=db.t3.micro` para `homolog`;
+- `db_storage_type=gp2` para `homolog`;
+- `db_instance_class=db.t4g.micro` para `prod`;
+- `db_storage_type=gp3` para `prod`;
+- `storage_type` parametrizado no Terraform por `var.db_storage_type`.
+
+O state remoto preserva os recursos ja criados antes de uma falha parcial. Em uma nova execucao do workflow, Terraform retoma o apply a partir do estado salvo no S3 e tenta criar apenas os recursos pendentes, como a instancia RDS.
+
 ## Execucao Local
 
 ```bash
@@ -129,6 +157,7 @@ Para executar `terraform plan` sem acesso ao backend remoto, renomeie temporaria
 ## Backup, Sizing E Seguranca
 
 - Storage criptografado com `storage_encrypted = true`.
+- Tipo de storage definido por ambiente com `db_storage_type`.
 - Banco sem acesso publico.
 - Acesso PostgreSQL restrito aos security groups autorizados.
 - Backup automatico configurado por `backup_retention_period`, com valor por ambiente definido no workflow.
