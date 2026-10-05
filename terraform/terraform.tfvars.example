@@ -10,6 +10,7 @@ db_name                  = "oficina"
 db_username              = "oficina"
 db_password              = "change-me"
 db_instance_class        = "db.t4g.micro"
+db_storage_type          = "gp3"
 db_engine_version        = "16"
 db_allocated_storage     = 20
 db_max_allocated_storage = 30

@@ -73,6 +73,12 @@ variable "db_instance_class" {
   default     = "db.t4g.micro"
 }
 
+variable "db_storage_type" {
+  description = "RDS storage type used by the PostgreSQL instance."
+  type        = string
+  default     = "gp3"
+}
+
 variable "db_engine_version" {
   description = "PostgreSQL engine version for RDS."
   type        = string

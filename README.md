@@ -88,6 +88,11 @@ Politica de backup aplicada por ambiente:
 - `homolog`: `backup_retention_period=0`, compatibilizado com restricoes de contas AWS Free Tier usadas no laboratorio;
 - `prod`: `backup_retention_period=7`, preservando retencao automatica para ambiente produtivo.
 
+Sizing aplicado por ambiente:
+
+- `homolog`: `db_instance_class=db.t3.micro` e `db_storage_type=gp2`, combinacao adotada para reduzir falhas de capacidade em contas Free Tier;
+- `prod`: `db_instance_class=db.t4g.micro` e `db_storage_type=gp3`, preservando o padrao definido para ambiente produtivo.
+
 Secrets gravados em `oficina-dgcar-auth-lambda`:
 
 - `DB_HOST`;
@@ -127,6 +132,7 @@ Para executar `terraform plan` sem acesso ao backend remoto, renomeie temporaria
 - Banco sem acesso publico.
 - Acesso PostgreSQL restrito aos security groups autorizados.
 - Backup automatico configurado por `backup_retention_period`, com valor por ambiente definido no workflow.
+- Classe de instancia e tipo de storage definidos por ambiente no workflow.
 - Janela de backup e manutencao configuraveis.
 - Protecao contra exclusao habilitada por padrao.
 - Snapshot final habilitado por padrao para remocoes controladas.
