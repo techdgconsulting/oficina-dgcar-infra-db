@@ -5,6 +5,7 @@ environment  = "development"
 vpc_id                     = "vpc-xxxxxxxx"
 private_subnet_ids         = ["subnet-xxxxxxxx", "subnet-yyyyyyyy"]
 allowed_security_group_ids = ["sg-xxxxxxxx"]
+auth_lambda_security_group_id = "sg-yyyyyyyy"
 
 db_name                  = "oficina"
 db_username              = "oficina"

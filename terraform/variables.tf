@@ -49,6 +49,12 @@ variable "allowed_security_group_ids" {
   type        = list(string)
 }
 
+variable "auth_lambda_security_group_id" {
+  description = "Security group ID attached to the CPF authentication Lambda."
+  type        = string
+  default     = ""
+}
+
 variable "db_name" {
   description = "PostgreSQL database name."
   type        = string
