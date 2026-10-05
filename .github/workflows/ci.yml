@@ -71,7 +71,7 @@ jobs:
           TF_VAR_environment: ${{ (github.base_ref || github.ref_name) == 'main' && 'prod' || 'homolog' }}
           TF_VAR_vpc_id: ${{ secrets.VPC_ID || 'vpc-12345678' }}
           TF_VAR_private_subnet_ids: ${{ secrets.PRIVATE_SUBNET_IDS || '["subnet-12345678","subnet-87654321"]' }}
-          TF_VAR_allowed_security_group_ids: ${{ secrets.ALLOWED_DB_SECURITY_GROUP_IDS || '["sg-12345678"]' }}
+          TF_VAR_allowed_security_group_ids: ${{ secrets.ALLOWED_DB_SECURITY_GROUP_IDS || 'sg-12345678' }}
           TF_VAR_auth_lambda_security_group_id: ${{ secrets.AUTH_LAMBDA_SECURITY_GROUP_ID || '' }}
           TF_VAR_db_username: ${{ secrets.DB_USERNAME || 'oficina' }}
           TF_VAR_db_password: ${{ secrets.DB_PASSWORD || 'change-me' }}
