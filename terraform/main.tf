@@ -1,7 +1,7 @@
 locals {
   name = "${var.project_name}-${var.environment}"
   allowed_security_group_ids = distinct(concat(
-    var.allowed_security_group_ids,
+    compact([for security_group_id in split(",", var.allowed_security_group_ids) : trimspace(security_group_id)]),
     trimspace(var.auth_lambda_security_group_id) != "" ? [var.auth_lambda_security_group_id] : []
   ))
 }
