@@ -30,6 +30,10 @@ Entradas esperadas de `oficina-dgcar-infra-k8s`:
 - `private_subnet_ids`;
 - `eks_cluster_security_group_id`, informado em `allowed_security_group_ids`.
 
+Entrada esperada de `oficina-dgcar-auth-lambda`:
+
+- `auth_lambda_security_group_id`, informado pelo secret `AUTH_LAMBDA_SECURITY_GROUP_ID`.
+
 Outputs publicados:
 
 - `rds_endpoint`;
@@ -60,6 +64,7 @@ Secrets esperados:
 - `VPC_ID`;
 - `PRIVATE_SUBNET_IDS`;
 - `ALLOWED_DB_SECURITY_GROUP_IDS`;
+- `AUTH_LAMBDA_SECURITY_GROUP_ID`;
 - `DB_USERNAME`;
 - `DB_PASSWORD`.
 
@@ -102,6 +107,13 @@ Configuracao efetiva por ambiente:
 
 As configuracoes acima sao aplicadas pelo workflow via variaveis `TF_VAR_*`, mantendo o Terraform parametrizado e evitando arquivos `.tfvars` com valores reais versionados.
 
+Conectividade Lambda -> RDS:
+
+- `ALLOWED_DB_SECURITY_GROUP_IDS` mantem os security groups autorizados para workloads do Kubernetes;
+- `AUTH_LAMBDA_SECURITY_GROUP_ID` adiciona o security group da Lambda Auth CPF a regra de entrada PostgreSQL;
+- Terraform consolida os valores em uma lista unica com remocao de duplicados;
+- essa configuracao corrige o timeout da Lambda ao consultar o PostgreSQL privado em homologacao.
+
 Secrets gravados em `oficina-dgcar-auth-lambda`:
 
 - `DB_HOST`;
@@ -120,7 +132,8 @@ Fluxo automatizado:
 1. `oficina-dgcar-infra-db` executa `apply`.
 2. Terraform publica `rds_endpoint`, `rds_port` e `db_name`.
 3. O workflow grava os dados de conexao do banco no repo `oficina-dgcar-auth-lambda`.
-4. A Lambda passa a ter os secrets necessarios para o `apply-infra`.
+4. O secret `AUTH_LAMBDA_SECURITY_GROUP_ID`, publicado por `oficina-dgcar-auth-lambda`, compoe a regra de entrada do RDS.
+5. A Lambda passa a ter os secrets necessarios para o `apply-infra` e permissao de rede para consultar o PostgreSQL.
 
 ## Ajustes Operacionais Registrados
 
