@@ -96,6 +96,8 @@ Apply real e disparado manualmente por `workflow_dispatch`, usando `action=apply
 
 Depois do `terraform apply`, o workflow publica automaticamente os outputs do RDS no repo `oficina-dgcar-auth-lambda`.
 
+Destroy real tambem e manual por `workflow_dispatch`, usando `action=destroy`, `confirm_destroy=DESTROY` e o environment desejado. Esse fluxo remove RDS PostgreSQL, subnet group, parameter group e security group do banco antes da destruicao da VPC no repo `oficina-dgcar-infra-k8s`.
+
 Politica de backup aplicada por ambiente:
 
 - `homolog`: `backup_retention_period=0`, compatibilizado com restricoes de contas AWS Free Tier usadas no laboratorio;
