@@ -20,6 +20,14 @@ Este repositorio provisiona e documenta exclusivamente a camada de dados gerenci
 - AWS VPC/Subnets/Security Groups;
 - GitHub Actions.
 
+## Documentacao Central
+
+A documentacao arquitetural completa do Tech Challenge 3 esta centralizada em:
+
+[oficina-dgcar-docs](https://github.com/techdgconsulting/oficina-dgcar-docs)
+
+Este repositorio mantem apenas a documentacao especifica da infraestrutura de banco, incluindo Terraform, variaveis, state, outputs, backup, sizing e seguranca.
+
 ## Separacao De Responsabilidades
 
 Este repositorio nao cria cluster Kubernetes, API Gateway, Lambda ou imagem Docker.
