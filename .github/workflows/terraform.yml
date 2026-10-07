@@ -176,6 +176,9 @@ jobs:
           TF_VAR_allowed_security_group_ids: ${{ secrets.ALLOWED_DB_SECURITY_GROUP_IDS }}
           TF_VAR_db_username: ${{ secrets.DB_USERNAME }}
           TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+          TF_VAR_db_instance_class: "db.t3.micro"
+          TF_VAR_db_storage_type: "gp2"
+          TF_VAR_backup_retention_period: "0"
           TF_VAR_skip_final_snapshot: "true"
         run: terraform apply -auto-approve -refresh=false -target=aws_db_instance.postgres
 
@@ -187,5 +190,8 @@ jobs:
           TF_VAR_allowed_security_group_ids: ${{ secrets.ALLOWED_DB_SECURITY_GROUP_IDS }}
           TF_VAR_db_username: ${{ secrets.DB_USERNAME }}
           TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+          TF_VAR_db_instance_class: ${{ inputs.environment == 'prod' && 'db.t4g.micro' || 'db.t3.micro' }}
+          TF_VAR_db_storage_type: ${{ inputs.environment == 'prod' && 'gp3' || 'gp2' }}
+          TF_VAR_backup_retention_period: ${{ inputs.environment == 'prod' && '7' || '0' }}
           TF_VAR_skip_final_snapshot: ${{ inputs.environment == 'prod' && 'false' || 'true' }}
         run: terraform destroy -auto-approve
