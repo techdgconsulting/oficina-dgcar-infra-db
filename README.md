@@ -102,6 +102,8 @@ No teardown academico, o banco e destruido antes da Lambda porque o security gro
 
 Em `homolog`, o destroy usa `skip_final_snapshot=true` para permitir desligamento recorrente do ambiente academico sem colisao de nomes de snapshot final. Em `prod`, `skip_final_snapshot=false` preserva snapshot final antes da remocao do RDS.
 
+Antes do `terraform destroy` em `homolog`, o workflow executa um apply direcionado para persistir `skip_final_snapshot=true` no state da instancia RDS ja existente. Esse passo evita que instancias criadas antes dessa configuracao continuem tentando gerar snapshot final com nome fixo.
+
 Politica de backup aplicada por ambiente:
 
 - `homolog`: `backup_retention_period=0`, compatibilizado com restricoes de contas AWS Free Tier usadas no laboratorio;
