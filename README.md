@@ -100,6 +100,8 @@ Destroy real tambem e manual por `workflow_dispatch`, usando `action=destroy`, `
 
 No teardown academico, o banco e destruido antes da Lambda porque o security group do RDS referencia o security group da Lambda como origem autorizada para PostgreSQL.
 
+Em `homolog`, o destroy usa `skip_final_snapshot=true` para permitir desligamento recorrente do ambiente academico sem colisao de nomes de snapshot final. Em `prod`, `skip_final_snapshot=false` preserva snapshot final antes da remocao do RDS.
+
 Politica de backup aplicada por ambiente:
 
 - `homolog`: `backup_retention_period=0`, compatibilizado com restricoes de contas AWS Free Tier usadas no laboratorio;
