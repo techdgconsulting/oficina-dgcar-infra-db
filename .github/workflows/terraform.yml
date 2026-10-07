@@ -42,7 +42,7 @@ permissions:
 
 jobs:
   validate:
-    name: Validate database infrastructure
+    name: validate
     runs-on: ubuntu-latest
 
     defaults:
