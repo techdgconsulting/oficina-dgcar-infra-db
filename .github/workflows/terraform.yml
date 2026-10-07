@@ -59,33 +59,14 @@ jobs:
           terraform_version: 1.15.8
           terraform_wrapper: false
 
-      - name: Configure AWS credentials
-        if: github.event_name == 'workflow_dispatch'
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
-
       - name: Terraform fmt
         run: terraform fmt -check -recursive
 
-      - name: Disable remote backend for pull requests
-        if: github.event_name != 'workflow_dispatch'
+      - name: Disable remote backend for validation
         run: mv backend.tf backend.tf.disabled
 
       - name: Terraform init without remote state
-        if: github.event_name != 'workflow_dispatch'
         run: terraform init
-
-      - name: Terraform init with remote state
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          terraform init \
-            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
-            -backend-config="key=${{ secrets.TF_STATE_KEY }}" \
-            -backend-config="region=${{ secrets.AWS_REGION }}" \
-            -backend-config="dynamodb_table=${{ secrets.TF_LOCK_TABLE }}"
 
       - name: Terraform validate
         run: terraform validate
