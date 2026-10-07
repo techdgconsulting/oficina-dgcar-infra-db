@@ -168,21 +168,34 @@ jobs:
             -backend-config="region=${{ secrets.AWS_REGION || 'us-east-1' }}" \
             -backend-config="use_lockfile=true"
 
-      - name: Persist homolog destroy settings
+      - name: Prepare RDS instance for destroy
         if: inputs.environment == 'homolog'
-        env:
-          TF_VAR_environment: ${{ inputs.environment }}
-          TF_VAR_vpc_id: ${{ secrets.VPC_ID }}
-          TF_VAR_private_subnet_ids: ${{ secrets.PRIVATE_SUBNET_IDS }}
-          TF_VAR_allowed_security_group_ids: ${{ secrets.ALLOWED_DB_SECURITY_GROUP_IDS }}
-          TF_VAR_db_username: ${{ secrets.DB_USERNAME }}
-          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
-          TF_VAR_db_instance_class: "db.t3.micro"
-          TF_VAR_db_storage_type: "gp2"
-          TF_VAR_backup_retention_period: "0"
-          TF_VAR_deletion_protection: "false"
-          TF_VAR_skip_final_snapshot: "true"
-        run: terraform apply -auto-approve -refresh=false -target=aws_db_instance.postgres
+        run: |
+          set -euo pipefail
+
+          DB_IDENTIFIER="oficina-dgcar-${{ inputs.environment }}-postgres"
+
+          if ! aws rds describe-db-instances --db-instance-identifier "$DB_IDENTIFIER" >/dev/null 2>&1; then
+            echo "RDS $DB_IDENTIFIER ja estava ausente."
+            exit 0
+          fi
+
+          DELETION_PROTECTION="$(aws rds describe-db-instances \
+            --db-instance-identifier "$DB_IDENTIFIER" \
+            --query 'DBInstances[0].DeletionProtection' \
+            --output text)"
+
+          if [ "$DELETION_PROTECTION" = "True" ]; then
+            echo "Removendo deletion protection do RDS $DB_IDENTIFIER."
+            aws rds modify-db-instance \
+              --db-instance-identifier "$DB_IDENTIFIER" \
+              --no-deletion-protection \
+              --apply-immediately
+
+            aws rds wait db-instance-available --db-instance-identifier "$DB_IDENTIFIER"
+          else
+            echo "Deletion protection ja estava desativada em $DB_IDENTIFIER."
+          fi
 
       - name: Terraform destroy
         env:
