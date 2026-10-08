@@ -100,9 +100,9 @@ Destroy real tambem e manual por `workflow_dispatch`, usando `action=destroy`, `
 
 No teardown academico, o banco e destruido antes da Lambda porque o security group do RDS referencia o security group da Lambda como origem autorizada para PostgreSQL.
 
-Em `homolog`, o destroy usa `deletion_protection=false` e `skip_final_snapshot=true` para permitir desligamento recorrente do ambiente academico sem bloqueio de delecao e sem colisao de nomes de snapshot final. Em `prod`, o apply usa `deletion_protection=true` e `skip_final_snapshot=false` para proteger a instancia e preservar snapshot final antes da remocao do RDS.
+Em `homolog`, o destroy usa `deletion_protection=false` e `skip_final_snapshot=true` para permitir desligamento recorrente do ambiente academico sem bloqueio de delecao e sem colisao de nomes de snapshot final. Em `prod`, o apply usa `deletion_protection=true`; antes do destroy, o workflow desativa essa protecao e mantem `skip_final_snapshot=false` para preservar snapshot final antes da remocao do RDS.
 
-Antes do `terraform destroy` em `homolog`, o workflow executa um apply direcionado para persistir `deletion_protection=false` e `skip_final_snapshot=true` no state da instancia RDS ja existente. Esse passo usa tambem a configuracao efetiva de homologacao (`backup_retention_period=0`, `db_instance_class=db.t3.micro` e `db_storage_type=gp2`) para evitar alteracoes indevidas durante a preparacao do destroy.
+Antes do `terraform destroy`, o workflow garante que `deletion_protection=false` esteja aplicado na instancia RDS ja existente. Esse preparo permite remover `prod` de forma orquestrada sem abrir o console, preservando o snapshot final quando `skip_final_snapshot=false`.
 
 O backend remoto usa lock nativo do S3 com `use_lockfile=true`.
 
