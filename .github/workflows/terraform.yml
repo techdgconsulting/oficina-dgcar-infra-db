@@ -1,0 +1,222 @@
+name: Managed Database Terraform
+
+on:
+  pull_request:
+    branches:
+      - main
+      - homolog
+  push:
+    branches:
+      - homolog
+      - main
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform.yml"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Terraform action to run"
+        required: true
+        default: "plan"
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+      environment:
+        description: "Target environment"
+        required: true
+        default: "homolog"
+        type: choice
+        options:
+          - homolog
+          - prod
+      confirm_destroy:
+        description: "Type DESTROY to confirm database teardown"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: validate
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: terraform
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+          terraform_wrapper: false
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: Disable remote backend for validation
+        run: mv backend.tf backend.tf.disabled
+
+      - name: Terraform init without remote state
+        run: terraform init
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform plan
+        env:
+          TF_VAR_environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || ((github.base_ref || github.ref_name) == 'main' && 'prod' || 'homolog') }}
+          TF_VAR_vpc_id: ${{ secrets.VPC_ID || 'vpc-12345678' }}
+          TF_VAR_private_subnet_ids: ${{ secrets.PRIVATE_SUBNET_IDS || '["subnet-12345678","subnet-87654321"]' }}
+          TF_VAR_allowed_security_group_ids: ${{ secrets.ALLOWED_DB_SECURITY_GROUP_IDS || '["sg-12345678"]' }}
+          TF_VAR_auth_lambda_security_group_id: ${{ secrets.AUTH_LAMBDA_SECURITY_GROUP_ID || '' }}
+          TF_VAR_db_username: ${{ secrets.DB_USERNAME || 'oficina' }}
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD || 'change-me' }}
+          TF_VAR_db_instance_class: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment || ((github.base_ref || github.ref_name) == 'main' && 'prod' || 'homolog')) == 'prod' && 'db.t4g.micro' || 'db.t3.micro' }}
+          TF_VAR_db_storage_type: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment || ((github.base_ref || github.ref_name) == 'main' && 'prod' || 'homolog')) == 'prod' && 'gp3' || 'gp2' }}
+          TF_VAR_backup_retention_period: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment || ((github.base_ref || github.ref_name) == 'main' && 'prod' || 'homolog')) == 'prod' && '7' || '0' }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID || 'test' }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY || 'test' }}
+          AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+        run: terraform plan -refresh=false
+
+  deploy:
+    name: Apply database infrastructure
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog') }}
+
+    defaults:
+      run:
+        working-directory: terraform
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Terraform init with remote state
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ secrets.TF_STATE_KEY }}" \
+            -backend-config="region=${{ secrets.AWS_REGION || 'us-east-1' }}" \
+            -backend-config="use_lockfile=true"
+
+      - name: Terraform apply
+        env:
+          TF_VAR_environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog') }}
+          TF_VAR_vpc_id: ${{ secrets.VPC_ID }}
+          TF_VAR_private_subnet_ids: ${{ secrets.PRIVATE_SUBNET_IDS }}
+          TF_VAR_allowed_security_group_ids: ${{ secrets.ALLOWED_DB_SECURITY_GROUP_IDS }}
+          TF_VAR_auth_lambda_security_group_id: ${{ secrets.AUTH_LAMBDA_SECURITY_GROUP_ID }}
+          TF_VAR_db_username: ${{ secrets.DB_USERNAME }}
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+          TF_VAR_db_instance_class: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog')) == 'prod' && 'db.t4g.micro' || 'db.t3.micro' }}
+          TF_VAR_db_storage_type: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog')) == 'prod' && 'gp3' || 'gp2' }}
+          TF_VAR_backup_retention_period: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog')) == 'prod' && '7' || '0' }}
+          TF_VAR_deletion_protection: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog')) == 'prod' && 'true' || 'false' }}
+          TF_VAR_skip_final_snapshot: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog')) == 'prod' && 'false' || 'true' }}
+        run: terraform apply -auto-approve
+
+  destroy:
+    name: Destroy database infrastructure
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'destroy' && inputs.confirm_destroy == 'DESTROY'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    defaults:
+      run:
+        working-directory: terraform
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Terraform init with remote state
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ secrets.TF_STATE_KEY }}" \
+            -backend-config="region=${{ secrets.AWS_REGION || 'us-east-1' }}" \
+            -backend-config="use_lockfile=true"
+
+      - name: Prepare RDS instance for destroy
+        if: inputs.environment == 'homolog'
+        run: |
+          set -euo pipefail
+
+          DB_IDENTIFIER="oficina-dgcar-${{ inputs.environment }}-postgres"
+
+          if ! aws rds describe-db-instances --db-instance-identifier "$DB_IDENTIFIER" >/dev/null 2>&1; then
+            echo "RDS $DB_IDENTIFIER ja estava ausente."
+            exit 0
+          fi
+
+          DELETION_PROTECTION="$(aws rds describe-db-instances \
+            --db-instance-identifier "$DB_IDENTIFIER" \
+            --query 'DBInstances[0].DeletionProtection' \
+            --output text)"
+
+          if [ "$DELETION_PROTECTION" = "True" ]; then
+            echo "Removendo deletion protection do RDS $DB_IDENTIFIER."
+            aws rds modify-db-instance \
+              --db-instance-identifier "$DB_IDENTIFIER" \
+              --no-deletion-protection \
+              --apply-immediately
+
+            aws rds wait db-instance-available --db-instance-identifier "$DB_IDENTIFIER"
+          else
+            echo "Deletion protection ja estava desativada em $DB_IDENTIFIER."
+          fi
+
+      - name: Terraform destroy
+        env:
+          TF_VAR_environment: ${{ inputs.environment }}
+          TF_VAR_vpc_id: ${{ secrets.VPC_ID }}
+          TF_VAR_private_subnet_ids: ${{ secrets.PRIVATE_SUBNET_IDS }}
+          TF_VAR_allowed_security_group_ids: ${{ secrets.ALLOWED_DB_SECURITY_GROUP_IDS }}
+          TF_VAR_auth_lambda_security_group_id: ${{ secrets.AUTH_LAMBDA_SECURITY_GROUP_ID }}
+          TF_VAR_db_username: ${{ secrets.DB_USERNAME }}
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+          TF_VAR_db_instance_class: ${{ inputs.environment == 'prod' && 'db.t4g.micro' || 'db.t3.micro' }}
+          TF_VAR_db_storage_type: ${{ inputs.environment == 'prod' && 'gp3' || 'gp2' }}
+          TF_VAR_backup_retention_period: ${{ inputs.environment == 'prod' && '7' || '0' }}
+          TF_VAR_deletion_protection: "false"
+          TF_VAR_skip_final_snapshot: ${{ inputs.environment == 'prod' && 'false' || 'true' }}
+        run: terraform destroy -auto-approve
