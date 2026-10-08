@@ -109,19 +109,19 @@ O backend remoto usa lock nativo do S3 com `use_lockfile=true`.
 Politica de backup aplicada por ambiente:
 
 - `homolog`: `backup_retention_period=0`, compatibilizado com restricoes de contas AWS Free Tier usadas no laboratorio;
-- `prod`: `backup_retention_period=7`, preservando retencao automatica para ambiente produtivo.
+- `prod`: `backup_retention_period=0`, compatibilizado com a mesma conta AWS Free Tier usada no laboratorio.
 
 Sizing aplicado por ambiente:
 
 - `homolog`: `db_instance_class=db.t3.micro` e `db_storage_type=gp2`, combinacao adotada para reduzir falhas de capacidade em contas Free Tier;
-- `prod`: `db_instance_class=db.t4g.micro` e `db_storage_type=gp3`, preservando o padrao definido para ambiente produtivo.
+- `prod`: `db_instance_class=db.t3.micro` e `db_storage_type=gp2`, combinacao adotada para executar producao demonstravel na conta Free Tier.
 
 Configuracao efetiva por ambiente:
 
 | Ambiente | Classe RDS | Storage | Retencao de backup | Finalidade |
 |---|---|---|---|---|
 | `homolog` | `db.t3.micro` | `gp2` | `0` dias | Compatibilidade com restricoes de laboratorio, Free Tier e disponibilidade regional. |
-| `prod` | `db.t4g.micro` | `gp3` | `7` dias | Configuracao produtiva com retencao automatica de backup. |
+| `prod` | `db.t3.micro` | `gp2` | `0` dias | Configuracao de producao demonstravel compativel com a conta Free Tier. |
 
 As configuracoes acima sao aplicadas pelo workflow via variaveis `TF_VAR_*`, mantendo o Terraform parametrizado e evitando arquivos `.tfvars` com valores reais versionados.
 
@@ -162,12 +162,9 @@ Durante o provisionamento de homologacao, a conta AWS retornou duas restricoes o
 
 As correcoes implementadas foram:
 
-- `backup_retention_period=0` para `homolog`;
-- `backup_retention_period=7` para `prod`;
-- `db_instance_class=db.t3.micro` para `homolog`;
-- `db_storage_type=gp2` para `homolog`;
-- `db_instance_class=db.t4g.micro` para `prod`;
-- `db_storage_type=gp3` para `prod`;
+- `backup_retention_period=0` para `homolog` e `prod`;
+- `db_instance_class=db.t3.micro` para `homolog` e `prod`;
+- `db_storage_type=gp2` para `homolog` e `prod`;
 - `storage_type` parametrizado no Terraform por `var.db_storage_type`.
 
 O state remoto preserva os recursos ja criados antes de uma falha parcial. Em uma nova execucao do workflow, Terraform retoma o apply a partir do estado salvo no S3 e tenta criar apenas os recursos pendentes, como a instancia RDS.

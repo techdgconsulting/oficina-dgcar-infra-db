@@ -80,9 +80,9 @@ jobs:
           TF_VAR_auth_lambda_security_group_id: ${{ secrets.AUTH_LAMBDA_SECURITY_GROUP_ID || '' }}
           TF_VAR_db_username: ${{ secrets.DB_USERNAME || 'oficina' }}
           TF_VAR_db_password: ${{ secrets.DB_PASSWORD || 'change-me' }}
-          TF_VAR_db_instance_class: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment || ((github.base_ref || github.ref_name) == 'main' && 'prod' || 'homolog')) == 'prod' && 'db.t4g.micro' || 'db.t3.micro' }}
-          TF_VAR_db_storage_type: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment || ((github.base_ref || github.ref_name) == 'main' && 'prod' || 'homolog')) == 'prod' && 'gp3' || 'gp2' }}
-          TF_VAR_backup_retention_period: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment || ((github.base_ref || github.ref_name) == 'main' && 'prod' || 'homolog')) == 'prod' && '7' || '0' }}
+          TF_VAR_db_instance_class: db.t3.micro
+          TF_VAR_db_storage_type: gp2
+          TF_VAR_backup_retention_period: "0"
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID || 'test' }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY || 'test' }}
           AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
@@ -133,9 +133,9 @@ jobs:
           TF_VAR_auth_lambda_security_group_id: ${{ secrets.AUTH_LAMBDA_SECURITY_GROUP_ID }}
           TF_VAR_db_username: ${{ secrets.DB_USERNAME }}
           TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
-          TF_VAR_db_instance_class: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog')) == 'prod' && 'db.t4g.micro' || 'db.t3.micro' }}
-          TF_VAR_db_storage_type: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog')) == 'prod' && 'gp3' || 'gp2' }}
-          TF_VAR_backup_retention_period: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog')) == 'prod' && '7' || '0' }}
+          TF_VAR_db_instance_class: db.t3.micro
+          TF_VAR_db_storage_type: gp2
+          TF_VAR_backup_retention_period: "0"
           TF_VAR_deletion_protection: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog')) == 'prod' && 'true' || 'false' }}
           TF_VAR_skip_final_snapshot: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog')) == 'prod' && 'false' || 'true' }}
         run: terraform apply -auto-approve
@@ -214,9 +214,9 @@ jobs:
           TF_VAR_auth_lambda_security_group_id: ${{ secrets.AUTH_LAMBDA_SECURITY_GROUP_ID }}
           TF_VAR_db_username: ${{ secrets.DB_USERNAME }}
           TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
-          TF_VAR_db_instance_class: ${{ inputs.environment == 'prod' && 'db.t4g.micro' || 'db.t3.micro' }}
-          TF_VAR_db_storage_type: ${{ inputs.environment == 'prod' && 'gp3' || 'gp2' }}
-          TF_VAR_backup_retention_period: ${{ inputs.environment == 'prod' && '7' || '0' }}
+          TF_VAR_db_instance_class: db.t3.micro
+          TF_VAR_db_storage_type: gp2
+          TF_VAR_backup_retention_period: "0"
           TF_VAR_deletion_protection: "false"
           TF_VAR_skip_final_snapshot: ${{ inputs.environment == 'prod' && 'false' || 'true' }}
         run: terraform destroy -auto-approve
