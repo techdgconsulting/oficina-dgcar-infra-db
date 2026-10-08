@@ -146,6 +146,12 @@ variable "skip_final_snapshot" {
   default     = false
 }
 
+variable "final_snapshot_identifier" {
+  description = "Optional final snapshot identifier used when deleting the RDS instance."
+  type        = string
+  default     = null
+}
+
 variable "log_min_duration_statement_ms" {
   description = "Minimum query duration, in milliseconds, logged by PostgreSQL."
   type        = string

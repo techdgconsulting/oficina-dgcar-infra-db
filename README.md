@@ -104,6 +104,8 @@ Em `homolog`, o destroy usa `deletion_protection=false` e `skip_final_snapshot=t
 
 Antes do `terraform destroy`, o workflow garante que `deletion_protection=false` esteja aplicado na instancia RDS ja existente. Esse preparo permite remover `prod` de forma orquestrada sem abrir o console, preservando o snapshot final quando `skip_final_snapshot=false`.
 
+Em `prod`, o identificador do snapshot final inclui `github.run_id` e `github.run_attempt` para evitar colisao com snapshots finais de destroys anteriores.
+
 O backend remoto usa lock nativo do S3 com `use_lockfile=true`.
 
 Politica de backup aplicada por ambiente:
