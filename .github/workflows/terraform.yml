@@ -218,4 +218,5 @@ jobs:
           TF_VAR_backup_retention_period: "0"
           TF_VAR_deletion_protection: "false"
           TF_VAR_skip_final_snapshot: ${{ inputs.environment == 'prod' && 'false' || 'true' }}
+          TF_VAR_final_snapshot_identifier: oficina-dgcar-${{ inputs.environment }}-postgres-final-${{ github.run_id }}-${{ github.run_attempt }}
         run: terraform destroy -auto-approve
