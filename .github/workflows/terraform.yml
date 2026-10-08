@@ -177,7 +177,6 @@ jobs:
             -backend-config="use_lockfile=true"
 
       - name: Prepare RDS instance for destroy
-        if: inputs.environment == 'homolog'
         run: |
           set -euo pipefail
 
