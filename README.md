@@ -102,7 +102,7 @@ No teardown academico, o banco e destruido antes da Lambda porque o security gro
 
 Em `homolog`, o destroy usa `deletion_protection=false` e `skip_final_snapshot=true` para permitir desligamento recorrente do ambiente academico sem bloqueio de delecao e sem colisao de nomes de snapshot final. Em `prod`, o apply usa `deletion_protection=true`; antes do destroy, o workflow desativa essa protecao e mantem `skip_final_snapshot=false` para preservar snapshot final antes da remocao do RDS.
 
-Antes do `terraform destroy`, o workflow garante que `deletion_protection=false` esteja aplicado na instancia RDS ja existente. Esse preparo permite remover `prod` de forma orquestrada sem abrir o console, preservando o snapshot final quando `skip_final_snapshot=false`.
+Antes do `terraform destroy`, o workflow garante que `deletion_protection=false` esteja aplicado na instancia RDS ja existente. Em `prod`, ele tambem sincroniza no state o identificador unico do snapshot final antes da destruicao, evitando que um valor antigo do state tente reutilizar um snapshot ja existente. Esse preparo permite remover `prod` de forma orquestrada sem abrir o console, preservando o snapshot final quando `skip_final_snapshot=false`.
 
 Em `prod`, o identificador do snapshot final inclui `github.run_id` e `github.run_attempt` para evitar colisao com snapshots finais de destroys anteriores.
 
