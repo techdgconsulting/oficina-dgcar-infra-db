@@ -73,7 +73,7 @@ jobs:
 
       - name: Terraform plan
         env:
-          TF_VAR_environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || ((github.base_ref || github.ref_name) == 'main' && 'prod' || 'homolog') }}
+          TF_VAR_environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || ((github.base_ref || github.ref_name) == 'main' && 'prod' || 'homolog') }}
           TF_VAR_vpc_id: ${{ secrets.VPC_ID || 'vpc-12345678' }}
           TF_VAR_private_subnet_ids: ${{ secrets.PRIVATE_SUBNET_IDS || '["subnet-12345678","subnet-87654321"]' }}
           TF_VAR_allowed_security_group_ids: ${{ secrets.ALLOWED_DB_SECURITY_GROUP_IDS || '["sg-12345678"]' }}
@@ -90,10 +90,10 @@ jobs:
 
   deploy:
     name: Apply database infrastructure
-    if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
     needs: validate
     runs-on: ubuntu-latest
-    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog') }}
+    environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog') }}
 
     defaults:
       run:
@@ -126,7 +126,7 @@ jobs:
 
       - name: Terraform apply
         env:
-          TF_VAR_environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog') }}
+          TF_VAR_environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog') }}
           TF_VAR_vpc_id: ${{ secrets.VPC_ID }}
           TF_VAR_private_subnet_ids: ${{ secrets.PRIVATE_SUBNET_IDS }}
           TF_VAR_allowed_security_group_ids: ${{ secrets.ALLOWED_DB_SECURITY_GROUP_IDS }}
@@ -136,8 +136,8 @@ jobs:
           TF_VAR_db_instance_class: db.t3.micro
           TF_VAR_db_storage_type: gp2
           TF_VAR_backup_retention_period: "0"
-          TF_VAR_deletion_protection: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog')) == 'prod' && 'true' || 'false' }}
-          TF_VAR_skip_final_snapshot: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog')) == 'prod' && 'false' || 'true' }}
+          TF_VAR_deletion_protection: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog')) == 'prod' && 'true' || 'false' }}
+          TF_VAR_skip_final_snapshot: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog')) == 'prod' && 'false' || 'true' }}
         run: terraform apply -auto-approve
 
   destroy:

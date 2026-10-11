@@ -90,9 +90,9 @@ Pull Requests executam:
 - `terraform validate`;
 - `terraform plan`.
 
-Push em `homolog` ou `main` executa validacao e plan offline.
+Push em `homolog` ou `main` executa validacao, plan offline e apply do ambiente correspondente.
 
-Apply real e disparado manualmente por `workflow_dispatch`, usando `action=apply` e o environment desejado. O environment `prod` esta sujeito a aprovacao no GitHub.
+`workflow_dispatch` com `action=apply` permanece disponivel para reprocessamento operacional controlado. O environment `prod` esta sujeito a aprovacao no GitHub.
 
 Depois do `terraform apply`, o workflow publica automaticamente os outputs do RDS no repo `oficina-dgcar-auth-lambda`.
 
