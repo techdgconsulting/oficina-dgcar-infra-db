@@ -20,6 +20,20 @@ Este repositorio provisiona e documenta exclusivamente a camada de dados gerenci
 - AWS VPC/Subnets/Security Groups;
 - GitHub Actions.
 
+## Diagrama Da Arquitetura Do Repositorio
+
+```mermaid
+flowchart LR
+  k8s[oficina-dgcar-infra-k8s<br/>VPC e subnets privadas] --> rds[(Amazon RDS PostgreSQL)]
+  lambda[oficina-dgcar-auth-lambda<br/>Security Group da Lambda] --> rds
+  api[oficina-dgcar-api<br/>Spring Boot no EKS] --> rds
+  rds --> outputs[Outputs Terraform<br/>endpoint, porta, db_name, security group]
+  outputs --> lambdaSecrets[Secrets da Lambda]
+  outputs --> apiSecrets[Secrets da API]
+```
+
+Este repositorio e responsavel apenas pela camada de dados. A API, a Lambda, o EKS e o API Gateway sao mantidos em repositorios separados.
+
 ## Documentacao Central
 
 A documentacao arquitetural completa do Tech Challenge 3 esta centralizada em:
@@ -106,6 +120,13 @@ Antes do `terraform destroy` em `homolog`, o workflow executa um apply direciona
 
 O backend remoto usa lock nativo do S3 com `use_lockfile=true`.
 
+Execucao automatica:
+
+```text
+feature/* -> PR -> homolog -> apply automatico homolog
+homolog -> PR -> main -> apply automatico prod
+```
+
 Politica de backup aplicada por ambiente:
 
 - `homolog`: `backup_retention_period=0`, compatibilizado com restricoes de contas AWS Free Tier usadas no laboratorio;
@@ -184,6 +205,17 @@ terraform plan
 ```
 
 Para executar `terraform plan` sem acesso ao backend remoto, renomeie temporariamente `backend.tf` antes do `terraform init`.
+
+## Swagger E Postman
+
+Este repositorio nao expoe API HTTP e, portanto, nao possui Swagger proprio nem collection Postman propria.
+
+Os contratos que usam o banco sao validados no repositorio da API:
+
+- Swagger UI: `${OFICINA_PUBLIC_BASE_URL}/swagger-ui.html`
+- OpenAPI JSON: `${OFICINA_PUBLIC_BASE_URL}/api-docs`
+- Collection Postman: [`oficina-dgcar-api/postman/Oficina-DGCar-Tech-Challenge-Fase-3.postman_collection.json`](https://github.com/techdgconsulting/oficina-dgcar-api/blob/homolog/postman/Oficina-DGCar-Tech-Challenge-Fase-3.postman_collection.json)
+- `OFICINA_PUBLIC_BASE_URL` deve ser consultado nos outputs/secrets publicados pelo provisionamento do `oficina-dgcar-infra-k8s`.
 
 ## Backup, Sizing E Seguranca
 
