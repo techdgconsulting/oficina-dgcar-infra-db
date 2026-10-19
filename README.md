@@ -1,234 +1,111 @@
-# oficina-dgcar-infra-db
+﻿# oficina-dgcar-infra-db
 
-Infraestrutura Terraform do banco de dados gerenciado da Oficina Mecanica DGCar.
+Provisiona a camada de dados da Oficina DGCar em homolog e prod: Amazon RDS PostgreSQL, subnet group, security group, parameter group e políticas de armazenamento, backup e exclusão. Não executa migrations nem aplica a API; o schema é mantido pelo Flyway no repositório da aplicação.
 
-## Proposito
+## Tecnologias e arquitetura
 
-Este repositorio provisiona e documenta exclusivamente a camada de dados gerenciada:
-
-- Amazon RDS PostgreSQL;
-- DB subnet group;
-- security group do banco;
-- parameter group PostgreSQL;
-- politicas de backup, janela de manutencao, sizing e protecao contra exclusao;
-- outputs consumidos pela API, pela Lambda de autenticacao e pela infraestrutura Kubernetes.
-
-## Tecnologias
-
-- Terraform;
-- AWS RDS PostgreSQL;
-- AWS VPC/Subnets/Security Groups;
-- GitHub Actions.
-
-## Diagrama Da Arquitetura Do Repositorio
+Terraform, provider AWS, RDS PostgreSQL 16, VPC/subnets privadas, security groups, backend S3 com lockfile e GitHub Actions.
 
 ```mermaid
 flowchart LR
-  k8s[oficina-dgcar-infra-k8s<br/>VPC e subnets privadas] --> rds[(Amazon RDS PostgreSQL)]
-  lambda[oficina-dgcar-auth-lambda<br/>Security Group da Lambda] --> rds
-  api[oficina-dgcar-api<br/>Spring Boot no EKS] --> rds
-  rds --> outputs[Outputs Terraform<br/>endpoint, porta, db_name, security group]
-  outputs --> lambdaSecrets[Secrets da Lambda]
-  outputs --> apiSecrets[Secrets da API]
+  Network[infra-k8s: VPC e subnets privadas] --> Subnets[DB subnet group]
+  Subnets --> DB[(RDS PostgreSQL)]
+  API[API no EKS] --> SG[Security group PostgreSQL 5432]
+  Lambda[Lambda Auth] --> SG
+  SG --> DB
+  Params[Parameter group] --> DB
+  TF[Terraform e state S3] --> DB
+  DB --> Outputs[Endpoint, JDBC, porta e identificadores]
+  Outputs --> Consumers[Configuracao dos consumidores]
 ```
 
-Este repositorio e responsavel apenas pela camada de dados. A API, a Lambda, o EKS e o API Gateway sao mantidos em repositorios separados.
+A API e a Lambda precisam tanto das credenciais de banco quanto da conectividade de rede. O RDS não é público.
 
-## Documentacao Central
+## Entradas e outputs
 
-A documentacao arquitetural completa do Tech Challenge 3 esta centralizada em:
+| Entrada Terraform | Origem |
+|---|---|
+| `environment` | `homolog` ou `prod`; informe explicitamente, pois o padrão do módulo é `academic` |
+| `vpc_id`, `private_subnet_ids` | Infraestrutura Kubernetes; subnets como lista de strings |
+| `allowed_security_group_ids` | IDs autorizados, parâmetro textual; o código extrai IDs `sg-...` e remove duplicados |
+| `auth_lambda_security_group_id` | Security group da Lambda |
+| `db_username`, `db_password` | Credenciais do RDS; senha sensível |
+| `db_instance_class`, `db_storage_type`, `backup_retention_period` | Sobrescritos pelo workflow por ambiente |
+| `deletion_protection`, `skip_final_snapshot` | Política de exclusão aplicada pelo workflow |
 
-[oficina-dgcar-docs](https://github.com/techdgconsulting/oficina-dgcar-docs)
+A variável textual de security groups aceita o conteúdo extraído tanto do formato separado por vírgulas quanto da representação JSON fornecida pela orquestração. `private_subnet_ids`, por sua vez, é uma lista Terraform e deve receber JSON válido em `TF_VAR_private_subnet_ids`.
 
-Este repositorio mantem apenas a documentacao especifica da infraestrutura de banco, incluindo Terraform, variaveis, state, outputs, backup, sizing e seguranca.
+Os [outputs](terraform/outputs.tf) são `rds_endpoint` (host sem porta), `rds_port`, `db_name`, `spring_datasource_url`, `rds_security_group_id`, `rds_instance_identifier`, `db_subnet_group_name` e `db_parameter_group_name`.
 
-## Separacao De Responsabilidades
+O workflow atual faz o apply, mas não contém etapa de publicação automática dos secrets `DB_*` ou `SPRING_DATASOURCE_*` nos consumidores. Configure esses valores nos environments da Lambda e da API a partir dos outputs e das credenciais utilizadas. Não confunda existência de output Terraform com distribuição automática entre repositórios.
 
-Este repositorio nao cria cluster Kubernetes, API Gateway, Lambda ou imagem Docker.
+## Configuração efetiva por ambiente
 
-Entradas esperadas de `oficina-dgcar-infra-k8s`:
+| Parâmetro | Homolog | Prod |
+|---|---|---|
+| Classe | `db.t3.micro` | `db.t4g.micro` |
+| Storage | `gp2` | `gp3` |
+| Retenção automática | 0 dias | 7 dias |
+| Deletion protection no apply | `false` | `true` |
+| Skip final snapshot no apply | `true` | `false` |
 
-- `vpc_id`;
-- `private_subnet_ids`;
-- `eks_cluster_security_group_id`, informado em `allowed_security_group_ids` como texto separado por virgula.
+Essas diferenças são definidas pelo workflow, não por arquivos `.tfvars` de ambiente. Os demais padrões do módulo incluem PostgreSQL 16, storage inicial de 20 GiB com crescimento até 30 GiB, `multi_az=false`, criptografia habilitada e porta 5432. Portanto, a configuração de prod não deve ser descrita como Multi-AZ.
 
-Entrada esperada de `oficina-dgcar-auth-lambda`:
+As janelas são `03:00-04:00` UTC para backup e `sun:04:00-sun:05:00` UTC para manutenção. O parameter group registra consultas a partir de 1000 ms. `apply_immediately=true` e atualização automática de versão minor estão habilitados. Backups automáticos não estão habilitados em homolog com retenção zero.
 
-- `auth_lambda_security_group_id`, informado pelo secret `AUTH_LAMBDA_SECURITY_GROUP_ID`.
+A proteção contra exclusão de prod é efetiva no recurso criado. O workflow de destroy só possui etapa explícita de desativação da proteção na AWS para homolog. Passar `TF_VAR_deletion_protection=false` ao comando destroy não desativa, por si só, a proteção da instância existente. Uma exclusão de prod exige tratar essa proteção no recurso; o README não apresenta o destroy como desbloqueio automático. O nome do snapshot final, quando usado, é `<projeto>-<ambiente>-postgres-final`.
 
-Outputs publicados:
+## Validação local
 
-- `rds_endpoint`;
-- `rds_port`;
-- `db_name`;
-- `spring_datasource_url`;
-- `rds_security_group_id`;
-- `rds_instance_identifier`;
-- `db_subnet_group_name`;
-- `db_parameter_group_name`.
+Pré-requisitos: Terraform compatível com o projeto (a CI usa 1.15.8), acesso ao registry de providers e Git. Na raiz:
 
-## State Terraform
-
-O backend remoto usa S3 com lockfile nativo:
-
-```text
-use_lockfile=true
+```sh
+terraform -chdir=terraform fmt -check -recursive
+terraform -chdir=terraform init -backend=false
+terraform -chdir=terraform validate
 ```
 
-Secrets esperados:
+Esses comandos não aplicam recursos. Para um plano do ambiente real, configure credenciais AWS e todas as entradas, inicialize o backend S3 correto e execute `terraform plan`. `-backend=false` não transforma um plano real em teste isolado do state.
 
-- `AWS_ACCESS_KEY_ID`;
-- `AWS_SECRET_ACCESS_KEY`;
-- `AWS_REGION`;
-- `TF_STATE_BUCKET`;
-- `TF_STATE_KEY`;
-- `GH_AUTOMATION_TOKEN`;
-- `VPC_ID`;
-- `PRIVATE_SUBNET_IDS`;
-- `ALLOWED_DB_SECURITY_GROUP_IDS`, em formato texto simples, exemplo `sg-xxxx` ou `sg-xxxx,sg-yyyy`;
-- `AUTH_LAMBDA_SECURITY_GROUP_ID`;
-- `DB_USERNAME`;
-- `DB_PASSWORD`.
+O backend usa `use_lockfile=true`; bucket e chave são fornecidos por `TF_STATE_BUCKET` e `TF_STATE_KEY`. Homolog e prod usam states separados. Não versione credenciais, `.tfvars` com valores reais ou state.
 
-Chaves de state definidas:
+O bucket do state deve ter criptografia e controle de acesso configurados. O lock protege contra operações concorrentes; ele não substitui a proteção do conteúdo do state, que pode conter dados sensíveis.
 
-- homologacao: `homolog/infra-db/terraform.tfstate`;
-- producao: `prod/infra-db/terraform.tfstate`.
+## Conexão e dimensionamento
 
-## Pipeline
+A API utiliza o output `spring_datasource_url` como URL JDBC. Usuário e senha devem ser configurados como secrets no ambiente de execução; a Lambda utiliza os parâmetros de conexão `DB_*`. A conexão depende também da autorização dos security groups e do acesso à rede privada do RDS.
 
-Pull Requests executam:
+O dimensionamento atual, com storage inicial de 20 GiB, crescimento até 30 GiB e `multi_az=false`, atende ao ambiente definido neste projeto. Uma implantação produtiva com outros requisitos de carga e disponibilidade exige avaliar a classe da instância, o uso de Multi-AZ e a retenção de backup. A configuração atual de prod permanece a da tabela acima.
 
-- `terraform fmt -check -recursive`;
-- `terraform init`;
-- `terraform validate`;
-- `terraform plan`.
+As aprovações de operação dependem das regras configuradas no GitHub Environment de cada ambiente.
 
-Push em `homolog` ou `main` executa validacao e plan offline.
+## CI, apply e orquestração
 
-Apply real e disparado manualmente por `workflow_dispatch`, usando `action=apply` e o environment desejado. O environment `prod` esta sujeito a aprovacao no GitHub.
+O workflow [Managed Database Terraform](.github/workflows/terraform.yml) executa:
 
-Depois do `terraform apply`, o workflow publica automaticamente os outputs do RDS no repo `oficina-dgcar-auth-lambda`.
+| Gatilho | Comportamento |
+|---|---|
+| PR para `homolog` ou `main` | Formatação, init, validate e plano sem refresh, em checkout sem backend remoto |
+| Push nessas branches, alterando `terraform/**` ou o workflow | Mesma validação; não aplica o banco |
+| Dispatch com `action=plan` | Validação e plano sem refresh; não aplica |
+| Dispatch com `action=apply` | Validação seguida de apply real no environment selecionado |
+| Dispatch com `action=destroy` e `confirm_destroy=DESTROY` | Validação seguida do fluxo de exclusão explícito |
 
-Destroy real tambem e manual por `workflow_dispatch`, usando `action=destroy`, `confirm_destroy=DESTROY` e o environment desejado. Esse fluxo remove RDS PostgreSQL, subnet group, parameter group e security group do banco antes do destroy da Lambda e antes da destruicao final da VPC no repo `oficina-dgcar-infra-k8s`.
+Para aplicar: **Actions → Managed Database Terraform → Run workflow**, escolha referência, `action=apply` e `environment=homolog` ou `prod`.
 
-No teardown academico, o banco e destruido antes da Lambda porque o security group do RDS referencia o security group da Lambda como origem autorizada para PostgreSQL.
+Os workflows **Provisionar Ambiente Homolog/Prod** de infra-k8s também disparam `terraform.yml` com `action=apply`. Primeiro provisionam a rede, depois o banco; após obter o security group da Lambda, repetem o apply do banco para autorizar essa origem. Isso é automação por dispatch da orquestração, não apply automático a cada push neste repositório.
 
-Em `homolog`, o destroy usa `deletion_protection=false` e `skip_final_snapshot=true` para permitir desligamento recorrente do ambiente academico sem bloqueio de delecao e sem colisao de nomes de snapshot final. Em `prod`, o apply usa `deletion_protection=true` e `skip_final_snapshot=false` para proteger a instancia e preservar snapshot final antes da remocao do RDS.
+Secrets necessários ao apply: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `TF_STATE_BUCKET`, `TF_STATE_KEY`, `VPC_ID`, `PRIVATE_SUBNET_IDS`, `ALLOWED_DB_SECURITY_GROUP_IDS`, `DB_USERNAME`, `DB_PASSWORD` e `AUTH_LAMBDA_SECURITY_GROUP_ID` quando a Lambda já existe. `GH_AUTOMATION_TOKEN` é usado pelo orquestrador para acionar workflows e configurar integrações; o apply atual deste repositório não o utiliza para publicar outputs.
 
-Antes do `terraform destroy` em `homolog`, o workflow executa um apply direcionado para persistir `deletion_protection=false` e `skip_final_snapshot=true` no state da instancia RDS ja existente. Esse passo usa tambem a configuracao efetiva de homologacao (`backup_retention_period=0`, `db_instance_class=db.t3.micro` e `db_storage_type=gp2`) para evitar alteracoes indevidas durante a preparacao do destroy.
+Após o apply, consulte os outputs no state do ambiente e valide a conexão pelos consumidores autorizados. A validação local do Terraform não comprova conectividade da API ou Lambda ao banco. Os procedimentos completos ficam em [infra-k8s](https://github.com/techdgconsulting/oficina-dgcar-infra-k8s).
 
-O backend remoto usa lock nativo do S3 com `use_lockfile=true`.
+## Contratos das APIs consumidoras
 
-Execucao automatica:
+Este repositório não expõe API HTTP própria.
 
-```text
-feature/* -> PR -> homolog -> apply automatico homolog
-homolog -> PR -> main -> apply automatico prod
-```
+- [Swagger da API local](http://localhost:8080/swagger-ui.html) e [OpenAPI JSON local](http://localhost:8080/api-docs).
+- Homolog/prod: `${OFICINA_PUBLIC_BASE_URL}/swagger-ui.html` e `${OFICINA_PUBLIC_BASE_URL}/api-docs`, usando a base do Gateway do ambiente.
+- [Collection Postman](https://github.com/techdgconsulting/oficina-dgcar-api/blob/homolog/postman/Oficina-DGCar-Tech-Challenge-Fase-3.postman_collection.json).
+- [Contrato da autenticação Lambda](https://github.com/techdgconsulting/oficina-dgcar-auth-lambda/blob/homolog/src/handler.js).
 
-Politica de backup aplicada por ambiente:
-
-- `homolog`: `backup_retention_period=0`, compatibilizado com restricoes de contas AWS Free Tier usadas no laboratorio;
-- `prod`: `backup_retention_period=7`, preservando retencao automatica para ambiente produtivo.
-
-Sizing aplicado por ambiente:
-
-- `homolog`: `db_instance_class=db.t3.micro` e `db_storage_type=gp2`, combinacao adotada para reduzir falhas de capacidade em contas Free Tier;
-- `prod`: `db_instance_class=db.t4g.micro` e `db_storage_type=gp3`, preservando o padrao definido para ambiente produtivo.
-
-Configuracao efetiva por ambiente:
-
-| Ambiente | Classe RDS | Storage | Retencao de backup | Finalidade |
-|---|---|---|---|---|
-| `homolog` | `db.t3.micro` | `gp2` | `0` dias | Compatibilidade com restricoes de laboratorio, Free Tier e disponibilidade regional. |
-| `prod` | `db.t4g.micro` | `gp3` | `7` dias | Configuracao produtiva com retencao automatica de backup. |
-
-As configuracoes acima sao aplicadas pelo workflow via variaveis `TF_VAR_*`, mantendo o Terraform parametrizado e evitando arquivos `.tfvars` com valores reais versionados.
-
-Conectividade Lambda -> RDS:
-
-- `ALLOWED_DB_SECURITY_GROUP_IDS` mantem os security groups autorizados para workloads do Kubernetes em texto separado por virgula;
-- `AUTH_LAMBDA_SECURITY_GROUP_ID` adiciona o security group da Lambda Auth CPF a regra de entrada PostgreSQL;
-- Terraform consolida os valores em uma lista unica com remocao de duplicados;
-- essa configuracao corrige o timeout da Lambda ao consultar o PostgreSQL privado em homologacao.
-
-Secrets gravados em `oficina-dgcar-auth-lambda`:
-
-- `DB_HOST`;
-- `DB_PORT`;
-- `DB_NAME`;
-- `DB_USERNAME`;
-- `DB_PASSWORD`;
-- `DB_SSL`.
-
-## Automacao Entre Repositorios
-
-O workflow usa `GH_AUTOMATION_TOKEN` para gravar secrets no repo da Lambda via GitHub CLI. Esse token fica configurado nos environments `homolog` e `prod`.
-
-Fluxo automatizado:
-
-1. `oficina-dgcar-infra-db` executa `apply`.
-2. Terraform publica `rds_endpoint`, `rds_port` e `db_name`.
-3. O workflow grava os dados de conexao do banco no repo `oficina-dgcar-auth-lambda`.
-4. O secret `AUTH_LAMBDA_SECURITY_GROUP_ID`, publicado por `oficina-dgcar-auth-lambda`, compoe a regra de entrada do RDS.
-5. A Lambda passa a ter os secrets necessarios para o `apply-infra` e permissao de rede para consultar o PostgreSQL.
-
-## Ajustes Operacionais Registrados
-
-Durante o provisionamento de homologacao, a conta AWS retornou duas restricoes operacionais:
-
-- `FreeTierRestrictionError`: a retencao de backup configurada inicialmente excedia o limite disponivel para a conta Free Tier;
-- `InsufficientDBInstanceCapacity`: a combinacao `db.t4g.micro` com `gp3` nao possuia capacidade disponivel nas Availability Zones da VPC no momento do apply.
-
-As correcoes implementadas foram:
-
-- `backup_retention_period=0` para `homolog`;
-- `backup_retention_period=7` para `prod`;
-- `db_instance_class=db.t3.micro` para `homolog`;
-- `db_storage_type=gp2` para `homolog`;
-- `db_instance_class=db.t4g.micro` para `prod`;
-- `db_storage_type=gp3` para `prod`;
-- `storage_type` parametrizado no Terraform por `var.db_storage_type`.
-
-O state remoto preserva os recursos ja criados antes de uma falha parcial. Em uma nova execucao do workflow, Terraform retoma o apply a partir do estado salvo no S3 e tenta criar apenas os recursos pendentes, como a instancia RDS.
-
-## Execucao Local
-
-```bash
-cd terraform
-cp terraform.tfvars.example terraform.tfvars
-terraform init -backend=false -reconfigure
-terraform fmt -recursive
-terraform validate
-terraform plan
-```
-
-Para executar `terraform plan` sem acesso ao backend remoto, renomeie temporariamente `backend.tf` antes do `terraform init`.
-
-## Swagger E Postman
-
-Este repositorio nao expoe API HTTP e, portanto, nao possui Swagger proprio nem collection Postman propria.
-
-Os contratos que usam o banco sao validados no repositorio da API:
-
-- Swagger UI: `${OFICINA_PUBLIC_BASE_URL}/swagger-ui.html`
-- OpenAPI JSON: `${OFICINA_PUBLIC_BASE_URL}/api-docs`
-- Collection Postman: [`oficina-dgcar-api/postman/Oficina-DGCar-Tech-Challenge-Fase-3.postman_collection.json`](https://github.com/techdgconsulting/oficina-dgcar-api/blob/homolog/postman/Oficina-DGCar-Tech-Challenge-Fase-3.postman_collection.json)
-- `OFICINA_PUBLIC_BASE_URL` deve ser consultado nos outputs/secrets publicados pelo provisionamento do `oficina-dgcar-infra-k8s`.
-
-## Backup, Sizing E Seguranca
-
-- Storage criptografado com `storage_encrypted = true`.
-- Tipo de storage definido por ambiente com `db_storage_type`.
-- Banco sem acesso publico.
-- Acesso PostgreSQL restrito aos security groups autorizados.
-- Backup automatico configurado por `backup_retention_period`, com valor por ambiente definido no workflow.
-- Classe de instancia e tipo de storage definidos por ambiente no workflow.
-- Janela de backup e manutencao configuraveis.
-- Protecao contra exclusao habilitada por padrao.
-- Snapshot final habilitado por padrao para remocoes controladas.
-
-## Origem Historica
-
-O commit de origem e a rastreabilidade da extracao estao registrados em [`ORIGEM_HISTORICA.md`](./ORIGEM_HISTORICA.md).
+A arquitetura e as decisões ficam na [documentação central](https://github.com/techdgconsulting/oficina-dgcar-docs). A origem da extração está em [ORIGEM_HISTORICA.md](ORIGEM_HISTORICA.md).
