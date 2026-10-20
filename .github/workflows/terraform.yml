@@ -332,7 +332,7 @@ jobs:
   request-deployment:
     name: Queue environment update
     needs: validate
-    if: (github.ref_name == 'homolog' || github.ref_name == 'main') && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.orchestrated && inputs.action == 'apply'))
+    if: ${{ !cancelled() && needs.validate.result == 'success' && ((github.ref_name == 'homolog' || github.ref_name == 'main') && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.orchestrated && inputs.action == 'apply'))) }}
     runs-on: ubuntu-latest
     environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog') }}
     steps:
