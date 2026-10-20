@@ -76,6 +76,7 @@ resource "aws_db_instance" "postgres" {
   backup_window              = var.backup_window
   maintenance_window         = var.maintenance_window
   deletion_protection        = var.deletion_protection
+  delete_automated_backups   = true
   skip_final_snapshot        = var.skip_final_snapshot
   final_snapshot_identifier  = var.skip_final_snapshot ? null : coalesce(var.final_snapshot_identifier, "${local.name}-postgres-final")
   db_subnet_group_name       = aws_db_subnet_group.main.name

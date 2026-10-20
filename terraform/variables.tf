@@ -143,7 +143,7 @@ variable "deletion_protection" {
 variable "skip_final_snapshot" {
   description = "Whether Terraform should skip a final snapshot when deleting the RDS instance."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "final_snapshot_identifier" {
