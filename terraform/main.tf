@@ -77,7 +77,7 @@ resource "aws_db_instance" "postgres" {
   maintenance_window         = var.maintenance_window
   deletion_protection        = var.deletion_protection
   skip_final_snapshot        = var.skip_final_snapshot
-  final_snapshot_identifier  = var.skip_final_snapshot ? null : "${local.name}-postgres-final"
+  final_snapshot_identifier  = var.skip_final_snapshot ? null : coalesce(var.final_snapshot_identifier, "${local.name}-postgres-final")
   db_subnet_group_name       = aws_db_subnet_group.main.name
   vpc_security_group_ids     = [aws_security_group.rds.id]
   parameter_group_name       = aws_db_parameter_group.postgres.name
