@@ -47,13 +47,19 @@ O workflow atual faz o apply, mas não contém etapa de publicação automática
 | Storage | `gp2` | `gp2` |
 | Retenção automática | 0 dias | 0 dias |
 | Deletion protection no apply | `false` | `true` |
-| Skip final snapshot no apply | `true` | `false` |
+| Skip final snapshot | `true` | `true` |
 
 Os parâmetros são definidos pelo workflow, não por arquivos `.tfvars` de ambiente. Os demais padrões do módulo incluem PostgreSQL 16, storage inicial de 20 GiB com crescimento até 30 GiB, `multi_az=false`, criptografia habilitada e porta 5432. Portanto, a configuração de prod não deve ser descrita como Multi-AZ.
 
-As janelas são `03:00-04:00` UTC para backup e `sun:04:00-sun:05:00` UTC para manutenção. O parameter group registra consultas a partir de 1000 ms. `apply_immediately=true` e atualização automática de versão minor estão habilitados. Backups automáticos não estão habilitados com retenção zero. O snapshot final de prod permanece habilitado no destroy.
+As janelas são `03:00-04:00` UTC para backup e `sun:04:00-sun:05:00` UTC para manutenção. O parameter group registra consultas a partir de 1000 ms. `apply_immediately=true` e atualização automática de versão minor estão habilitados. Backups automáticos não estão habilitados com retenção zero. O destroy não gera snapshot final em nenhum dos ambientes e define `delete_automated_backups=true` no RDS.
 
-A proteção contra exclusão de prod é efetiva no recurso criado. A remoção central exige confirmação e prepara a instância explicitamente antes do destroy. Em prod, sincroniza os atributos de exclusão e utiliza snapshot final com identificador único por execução. Esse procedimento é exclusivo do destroy manual.
+A proteção contra exclusão de prod permanece ativa durante a operação. O destroy central exige confirmação e desativa essa proteção antes da remoção. Nos dois ambientes, sincroniza `skip_final_snapshot=true` no state antes de destruir o banco, inclusive quando ele foi criado com a política anterior. Esse procedimento é exclusivo do destroy manual.
+
+A preparação gera um plano completo, sem `-target`, e aplica somente o plano salvo após passar pelo validador de alterações não destrutivas. Planos incompletos, com erros, remoções ou substituições continuam bloqueados nessa preparação. A remoção seguinte é o destroy manual confirmado.
+
+Após o destroy, o [script de limpeza do RDS](scripts/aws/purge_rds_backups.py) remove snapshots manuais, inclusive antigos snapshots finais, e backups automáticos retidos cuja origem seja exatamente `oficina-dgcar-<ambiente>-postgres`. Ele exige confirmação, recusa executar se a instância ainda existir e verifica a ausência dos backups antes de concluir. Falhas de permissão ou resíduos mantêm a execução com erro. A limpeza de um ambiente não alcança o outro.
+
+A identidade AWS da esteira precisa permitir `rds:DescribeDBSnapshots`, `rds:DeleteDBSnapshot`, `rds:DescribeDBInstanceAutomatedBackups` e `rds:DeleteDBInstanceAutomatedBackup`, além das permissões existentes de describe, alteração e exclusão da instância. O backend S3 do Terraform é infraestrutura de controle compartilhada, não um backup de recuperação do banco, e permanece fora do destroy do ambiente.
 
 ## Validação local
 
