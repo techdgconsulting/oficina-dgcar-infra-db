@@ -1,4 +1,4 @@
-# oficina-dgcar-infra-db
+﻿# oficina-dgcar-infra-db
 
 Provisiona a camada de dados da Oficina DGCar em homolog e prod: Amazon RDS PostgreSQL, subnet group, security group, parameter group e políticas de armazenamento, backup e exclusão. Não executa migrations nem aplica a API; o schema é mantido pelo Flyway no repositório da aplicação.
 
@@ -49,11 +49,11 @@ O workflow atual faz o apply, mas não contém etapa de publicação automática
 | Deletion protection no apply | `false` | `true` |
 | Skip final snapshot no apply | `true` | `false` |
 
-Essas diferenças são definidas pelo workflow, não por arquivos `.tfvars` de ambiente. Os demais padrões do módulo incluem PostgreSQL 16, storage inicial de 20 GiB com crescimento até 30 GiB, `multi_az=false`, criptografia habilitada e porta 5432. Portanto, a configuração de prod não deve ser descrita como Multi-AZ.
+Os parâmetros são definidos pelo workflow, não por arquivos `.tfvars` de ambiente. Os demais padrões do módulo incluem PostgreSQL 16, storage inicial de 20 GiB com crescimento até 30 GiB, `multi_az=false`, criptografia habilitada e porta 5432. Portanto, a configuração de prod não deve ser descrita como Multi-AZ.
 
-As janelas são `03:00-04:00` UTC para backup e `sun:04:00-sun:05:00` UTC para manutenção. O parameter group registra consultas a partir de 1000 ms. `apply_immediately=true` e atualização automática de versão minor estão habilitados. Backups automáticos ficam desabilitados em ambos os ambientes com retenção zero, conforme os ajustes existentes de compatibilidade com o Free Tier.
+As janelas são `03:00-04:00` UTC para backup e `sun:04:00-sun:05:00` UTC para manutenção. O parameter group registra consultas a partir de 1000 ms. `apply_immediately=true` e atualização automática de versão minor estão habilitados. Backups automáticos não estão habilitados com retenção zero. O snapshot final de prod permanece habilitado no destroy.
 
-A proteção contra exclusão de prod é efetiva no recurso criado. O workflow de destroy desativa explicitamente a proteção na instância antes de removê-la. Em prod, sincroniza os atributos de exclusão com o Terraform e usa snapshot final com identificador único por execução e tentativa. Essas etapas são exclusivas da operação de remoção, não do provisionamento.
+A proteção contra exclusão de prod é efetiva no recurso criado. A remoção central exige confirmação e prepara a instância explicitamente antes do destroy. Em prod, sincroniza os atributos de exclusão e utiliza snapshot final com identificador único por execução. Esse procedimento é exclusivo do destroy manual.
 
 ## Validação local
 
@@ -86,16 +86,16 @@ O workflow [Managed Database Terraform](.github/workflows/terraform.yml) executa
 | Gatilho | Comportamento |
 |---|---|
 | PR para `homolog` ou `main` | Formatação, init, validate e plano sem refresh, em checkout sem backend remoto |
-| Push nessas branches, alterando `terraform/**` ou o workflow | Mesma validação; não aplica o banco |
+| Merge nessas branches, alterando Terraform, workflow ou `scripts/ci/**` | Validação e solicitação automática de atualização na fila central |
 | Dispatch com `action=plan` | Validação e plano sem refresh; não aplica |
-| Dispatch com `action=apply` | Validação seguida de apply real no environment selecionado |
-| Dispatch com `action=destroy` e `confirm_destroy=DESTROY` | Validação seguida do fluxo de exclusão explícito |
+| Dispatch com `action=apply` | Valida e solicita atualização ao coordenador de infra-k8s |
+| Remoção | Somente pelo workflow central de destroy, com confirmação explícita |
 
 Para aplicar: **Actions → Managed Database Terraform → Run workflow**, escolha referência, `action=apply` e `environment=homolog` ou `prod`.
 
-Os workflows **Provisionar Ambiente Homolog/Prod** de infra-k8s também disparam `terraform.yml` com `action=apply`. Primeiro provisionam a rede, depois o banco; após obter o security group da Lambda, repetem o apply do banco para autorizar essa origem. Isso é automação por dispatch da orquestração, não apply automático a cada push neste repositório.
+Os workflows **Provisionar Ambiente Homolog/Prod** de infra-k8s também disparam `terraform.yml` com `action=apply`. Primeiro provisionam a rede, depois o banco; após obter o security group da Lambda, repetem o apply do banco para autorizar essa origem. Após um merge com alterações relevantes, essa mesma fila recebe automaticamente a atualização isolada do banco, sem executar o provisionamento completo.
 
-Secrets necessários ao apply: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `TF_STATE_BUCKET`, `TF_STATE_KEY`, `VPC_ID`, `PRIVATE_SUBNET_IDS`, `ALLOWED_DB_SECURITY_GROUP_IDS`, `DB_USERNAME`, `DB_PASSWORD` e `AUTH_LAMBDA_SECURITY_GROUP_ID` quando a Lambda já existe. `GH_AUTOMATION_TOKEN` é usado pelo orquestrador para acionar workflows e configurar integrações; o apply atual deste repositório não o utiliza para publicar outputs.
+Secrets necessários ao apply: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `TF_STATE_BUCKET`, `TF_STATE_KEY`, `VPC_ID`, `PRIVATE_SUBNET_IDS`, `ALLOWED_DB_SECURITY_GROUP_IDS`, `DB_USERNAME`, `DB_PASSWORD` e `AUTH_LAMBDA_SECURITY_GROUP_ID` quando a Lambda já existe. `GH_AUTOMATION_TOKEN` permite solicitar a atualização e verificar a execução pai antes do acesso à AWS. O apply não publica outputs automaticamente nos consumidores.
 
 Após o apply, consulte os outputs no state do ambiente e valide a conexão pelos consumidores autorizados. A validação local do Terraform não comprova conectividade da API ou Lambda ao banco. Os procedimentos completos ficam em [infra-k8s](https://github.com/techdgconsulting/oficina-dgcar-infra-k8s).
 
@@ -109,3 +109,5 @@ Este repositório não expõe API HTTP própria.
 - [Contrato da autenticação Lambda](https://github.com/techdgconsulting/oficina-dgcar-auth-lambda/blob/homolog/src/handler.js).
 
 A arquitetura e as decisões ficam na [documentação central](https://github.com/techdgconsulting/oficina-dgcar-docs). A origem da extração está em [ORIGEM_HISTORICA.md](ORIGEM_HISTORICA.md).
+
+O worker aplica o plano salvo somente após validação. Qualquer remoção ou substituição bloqueia a atualização e exige revisão. States, locks e secrets permanecem separados por ambiente; `homolog` usa a branch `homolog` e `prod` usa `main`. Os campos `orchestrated`, `parent_run_id` e `source_sha` pertencem ao coordenador. PRs para `main` devem conter o histórico de homolog. Consulte a [ADR-020](https://github.com/techdgconsulting/oficina-dgcar-docs/blob/homolog/docs/adr/ADR-020-promocao-e-deploy-automatico.md).

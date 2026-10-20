@@ -1,5 +1,7 @@
 name: Managed Database Terraform
 
+run-name: "${{ github.workflow }} | ${{ inputs.parent_run_id || github.run_id }} | ${{ inputs.orchestrated && inputs.source_sha || github.sha }}"
+
 on:
   pull_request:
     branches:
@@ -12,6 +14,7 @@ on:
     paths:
       - "terraform/**"
       - ".github/workflows/terraform.yml"
+      - "scripts/ci/**"
   workflow_dispatch:
     inputs:
       action:
@@ -37,11 +40,42 @@ on:
         default: ""
         type: string
 
+      orchestrated:
+        description: "Reserved for the environment coordinator"
+        type: boolean
+        default: false
+      parent_run_id:
+        description: "Environment coordinator run ID"
+        type: string
+      source_sha:
+        description: "Validated source commit"
+        type: string
+
 permissions:
   contents: read
 
 jobs:
+  authorize:
+    name: Authorize deployment source
+    if: github.event_name == 'workflow_dispatch' && inputs.orchestrated && (github.ref_name == 'homolog' || github.ref_name == 'main')
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Authorize protected source before checkout and tests
+        env:
+          GH_TOKEN: ${{ secrets.GH_AUTOMATION_TOKEN }}
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          PARENT_RUN_ID: ${{ inputs.parent_run_id }}
+          DEPLOY_ACTION: "${{ inputs.action }}"
+        run: python3 scripts/ci/deployment.py worker
+
   validate:
+    needs: authorize
+    if: ${{ !cancelled() && ((inputs.orchestrated && needs.authorize.result == 'success') || (!inputs.orchestrated && needs.authorize.result == 'skipped')) }}
     name: validate
     runs-on: ubuntu-latest
 
@@ -50,8 +84,28 @@ jobs:
         working-directory: terraform
 
     steps:
+      - name: Require promotion from homolog history
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          STATUS="$(gh api "repos/$GITHUB_REPOSITORY/compare/homolog...$HEAD_SHA" --jq '.status')"
+          case "$STATUS" in
+            ahead|identical) echo "Histórico de homolog preservado para promoção." ;;
+            *) echo "::error::Atualize a PR com homolog antes de promover para main."; exit 1 ;;
+          esac
+
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.orchestrated && inputs.source_sha || github.sha }}
+
+      - name: Validate deployment safeguards
+        working-directory: ${{ github.workspace }}
+        run: python3 -m unittest discover -s scripts/ci -p 'test_*.py'
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -90,7 +144,7 @@ jobs:
 
   deploy:
     name: Apply database infrastructure
-    if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply' && inputs.orchestrated
     needs: validate
     runs-on: ubuntu-latest
     environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog') }}
@@ -102,6 +156,18 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.orchestrated && inputs.source_sha || github.sha }}
+
+      - name: Authorize environment coordinator
+        env:
+          GH_TOKEN: ${{ secrets.GH_AUTOMATION_TOKEN }}
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          PARENT_RUN_ID: ${{ inputs.parent_run_id }}
+          DEPLOY_ACTION: "${{ inputs.action }}"
+        working-directory: ${{ github.workspace }}
+        run: python3 scripts/ci/deployment.py worker
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -138,11 +204,15 @@ jobs:
           TF_VAR_backup_retention_period: "0"
           TF_VAR_deletion_protection: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog')) == 'prod' && 'true' || 'false' }}
           TF_VAR_skip_final_snapshot: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog')) == 'prod' && 'false' || 'true' }}
-        run: terraform apply -auto-approve
+        run: |
+          terraform plan -input=false -out=deployment.tfplan
+          terraform show -json deployment.tfplan > deployment-plan.json
+          python3 ../scripts/ci/deployment.py plan deployment-plan.json
+          terraform apply -input=false deployment.tfplan
 
   destroy:
     name: Destroy database infrastructure
-    if: github.event_name == 'workflow_dispatch' && inputs.action == 'destroy' && inputs.confirm_destroy == 'DESTROY'
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'destroy' && inputs.confirm_destroy == 'DESTROY' && inputs.orchestrated
     needs: validate
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
@@ -154,6 +224,18 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.orchestrated && inputs.source_sha || github.sha }}
+
+      - name: Authorize environment coordinator
+        env:
+          GH_TOKEN: ${{ secrets.GH_AUTOMATION_TOKEN }}
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          PARENT_RUN_ID: ${{ inputs.parent_run_id }}
+          DEPLOY_ACTION: "${{ inputs.action }}"
+        working-directory: ${{ github.workspace }}
+        run: python3 scripts/ci/deployment.py worker
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -224,7 +306,11 @@ jobs:
           TF_VAR_deletion_protection: "false"
           TF_VAR_skip_final_snapshot: "false"
           TF_VAR_final_snapshot_identifier: oficina-dgcar-${{ inputs.environment }}-postgres-final-${{ github.run_id }}-${{ github.run_attempt }}
-        run: terraform apply -auto-approve -target=aws_db_instance.postgres
+        run: |
+          terraform plan -input=false -target=aws_db_instance.postgres -out=recovery.tfplan
+          terraform show -json recovery.tfplan > recovery-plan.json
+          python3 ../scripts/ci/deployment.py plan recovery-plan.json
+          terraform apply -input=false recovery.tfplan
 
       - name: Terraform destroy
         env:
@@ -242,3 +328,27 @@ jobs:
           TF_VAR_skip_final_snapshot: ${{ inputs.environment == 'prod' && 'false' || 'true' }}
           TF_VAR_final_snapshot_identifier: oficina-dgcar-${{ inputs.environment }}-postgres-final-${{ github.run_id }}-${{ github.run_attempt }}
         run: terraform destroy -auto-approve
+
+  request-deployment:
+    name: Queue environment update
+    needs: validate
+    if: ${{ !cancelled() && needs.validate.result == 'success' && ((github.ref_name == 'homolog' || github.ref_name == 'main') && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.orchestrated && inputs.action == 'apply'))) }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog') }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Request coordinated deployment
+        env:
+          GH_TOKEN: ${{ secrets.GH_AUTOMATION_TOKEN }}
+          TARGET_ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog') }}
+          SOURCE_SHA: ${{ github.sha }}
+          COMPONENT: database
+        run: python3 scripts/ci/deployment.py request
+
+  require-destroy-coordinator:
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'destroy' && !inputs.orchestrated
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "::error::Use Destroy Ambiente Homolog/Prod no repositÃ³rio infra-k8s, com confirmaÃ§Ã£o explÃ­cita."
+          exit 1
