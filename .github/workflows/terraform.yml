@@ -203,7 +203,7 @@ jobs:
           TF_VAR_db_storage_type: gp2
           TF_VAR_backup_retention_period: "0"
           TF_VAR_deletion_protection: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog')) == 'prod' && 'true' || 'false' }}
-          TF_VAR_skip_final_snapshot: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_name == 'main' && 'prod' || 'homolog')) == 'prod' && 'false' || 'true' }}
+          TF_VAR_skip_final_snapshot: "true"
         run: |
           terraform plan -input=false -out=deployment.tfplan
           terraform show -json deployment.tfplan > deployment-plan.json
@@ -291,7 +291,7 @@ jobs:
           fi
 
       - name: Sync RDS destroy attributes
-        if: ${{ inputs.environment == 'prod' && steps.prepare_rds.outputs.rds_exists == 'true' }}
+        if: ${{ steps.prepare_rds.outputs.rds_exists == 'true' }}
         env:
           TF_VAR_environment: ${{ inputs.environment }}
           TF_VAR_vpc_id: ${{ secrets.VPC_ID }}
@@ -304,10 +304,10 @@ jobs:
           TF_VAR_db_storage_type: gp2
           TF_VAR_backup_retention_period: "0"
           TF_VAR_deletion_protection: "false"
-          TF_VAR_skip_final_snapshot: "false"
-          TF_VAR_final_snapshot_identifier: oficina-dgcar-${{ inputs.environment }}-postgres-final-${{ github.run_id }}-${{ github.run_attempt }}
+          TF_VAR_skip_final_snapshot: "true"
         run: |
-          terraform plan -input=false -target=aws_db_instance.postgres -out=recovery.tfplan
+          # A targeted plan is incomplete and is rejected by the deployment guard.
+          terraform plan -input=false -out=recovery.tfplan
           terraform show -json recovery.tfplan > recovery-plan.json
           python3 ../scripts/ci/deployment.py plan recovery-plan.json
           terraform apply -input=false recovery.tfplan
@@ -325,9 +325,14 @@ jobs:
           TF_VAR_db_storage_type: gp2
           TF_VAR_backup_retention_period: "0"
           TF_VAR_deletion_protection: "false"
-          TF_VAR_skip_final_snapshot: ${{ inputs.environment == 'prod' && 'false' || 'true' }}
-          TF_VAR_final_snapshot_identifier: oficina-dgcar-${{ inputs.environment }}-postgres-final-${{ github.run_id }}-${{ github.run_attempt }}
+          TF_VAR_skip_final_snapshot: "true"
         run: terraform destroy -auto-approve
+
+      - name: Remove remaining RDS snapshots and retained backups
+        working-directory: ${{ github.workspace }}
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+        run: python3 scripts/aws/purge_rds_backups.py --environment "$TARGET_ENVIRONMENT" --confirm DESTROY
 
   request-deployment:
     name: Queue environment update
